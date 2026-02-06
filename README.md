@@ -1,154 +1,141 @@
-# Streamlined chr20-Based Variant-Calling Pipeline
+# A Lightweight NGS Variant‑Calling Pipeline (chr20)
 
-A streamlined, chr20-focused variant-calling pipeline built using real Illumina sequencing data (SRR1910621).
-Designed to demonstrate all major steps of an NGS variant-calling workflow while remaining computationally efficient and suitable for systems with modest resources (e.g., 8 GB RAM).
+## Project intent (learning‑phase)
 
-# Project Overview
+This repository documents a **learning‑focused, chromosome‑restricted NGS variant‑calling workflow** built on **chromosome 20** using real Illumina sequencing data (SRR1910621).
 
-This workflow performs:
+The goal of this project is **not** to present a production‑ready or genome‑wide pipeline. Instead, it represents a **deliberate learning exercise** to understand how each major step in a variant‑calling workflow behaves, how results should be sanity‑checked, and how large sequencing data can be handled responsibly during early experimentation.
 
-FASTQ acquisition
+This repository complements my full exome project (**From‑FASTQ‑to‑Annotated‑Variants‑A‑Human‑Exome‑Pipeline**). While the exome pipeline demonstrates end‑to‑end completeness, this chr20 project reflects my **earlier, exploratory learning stage**, where speed, clarity, and interpretability were prioritized.
 
-Quality control and trimming
+---
 
-Alignment to a chr20-only reference
+## Why chromosome 20?
 
-Duplicate marking
+Analysis of chromosome 20 was a **simplification choice** because it:
 
-Variant calling (bcftools)
+* Enables faster execution and iteration on modest hardware
+* Reduces memory and storage requirements
+* Makes debugging and result inspection manageable
+* Still preserves biologically meaningful variation
+  
+---
 
-Variant filtering
+## What this pipeline does
 
-Variant statistics
+The workflow covers the core steps of short‑read variant calling:
 
-Variant density analysis
+* Raw FASTQ quality control and trimming
+* Alignment to a chr20‑only GRCh38 reference
+* Sorting, indexing, and duplicate marking
+* Single‑sample variant calling
+* Explicit variant filtering
+* Basic variant statistics and density analysis
 
-Restricting analysis to chromosome 20 enables rapid experimentation while preserving biological interpretability.
+Each step was run manually and inspected, with an emphasis on **learning what can go wrong and how outputs should be interpreted**.
 
-# Directory Structure
-ngs_variant_project/
-├── raw_data/                 # FASTQ files (excluded from GitHub)
-├── reference/
-│   └── chr20.sizes           # Reference size file (included)
-├── qc/
-│   └── fastp_report.html     # QC report
-├── alignment/                # BAM + index files (excluded)
-├── variants/                 # VCF files (excluded)
-├── analysis/
-│   ├── variant_stats.txt
-│   ├── chr20_100kb_windows.bed
-│   └── variant_density_100kb.bed
-└── .gitignore
+---
 
+## Tools used and the reasoning
 
+* **fastp** – simple, integrated read QC and trimming with clear before/after reports
+* **bwa mem** – widely used short‑read aligner suitable for human data
+* **samtools** – essential BAM processing and alignment QC
+* **Picard** – duplicate marking to understand PCR artifact handling
+* **bcftools** – transparent, pileup‑based single‑sample variant calling and filtering
+* **bedtools** – basic genomic windowing for exploratory density analysis
 
-Large FASTQs, BAMs, VCFs, and reference FASTA/index files are intentionally excluded with .gitignore.
+These tools were chosen because they are **well‑established, widely documented, and suitable for learning fundamental concepts**.
 
-# Dataset
+---
 
-Accession: SRR1910621
-Sequencing: Illumina paired-end
-Source: NCBI SRA
-Size: ~600 MB compressed
+## Results and sanity checks
 
-# Tools Used
+Variant calling was intentionally followed by **basic statistical checks** rather than downstream interpretation.
 
-fastp – QC and trimming
+From `bcftools stats` on the filtered chr20 VCF:
 
-bwa mem – alignment
+* Total variants: **1,969**
 
-samtools – sorting & indexing
+  * SNPs: 1,943
+  * Indels: 26
+* Ti/Tv ratio: **~0.52**
+* Most variant sites have **low depth (DP = 1–2)**
 
-Picard – duplicate marking
+### How these results were interpreted
 
-bcftools – variant calling & filtering
+* The small number of variants is expected for a chromosome‑restricted analysis
+* The low Ti/Tv ratio reflects **single‑sample calling with shallow per‑site depth**, and was confirmed not to be a pipeline error
+* These metrics were used as **learning‑oriented sanity checks**, not as genome‑wide quality benchmarks
 
-bedtools – windowing & density analysis
+Understanding why these values differ from textbook expectations was a key learning outcome of this project.
 
-# Pipeline Summary
-## 1. Quality Control
-fastp \
-  -i raw_data/sample_R1.fastq.gz \
-  -I raw_data/sample_R2.fastq.gz \
-  -o qc/clean_R1.fastq.gz \
-  -O qc/clean_R2.fastq.gz \
-  -h qc/fastp_report.html
+---
 
-## 2. Alignment to chr20
-bwa mem -t 4 \
-  -R '@RG\tID:1\tSM:sample\tLB:lib1\tPL:ILLUMINA' \
-  reference/chr20.fa \
-  qc/clean_R1.fastq.gz qc/clean_R2.fastq.gz \
-| samtools sort -o alignment/sample.chr20.sorted.bam
+## Variant density analysis
 
-samtools index alignment/sample.chr20.sorted.bam
+Variants were summarized in **100 kb windows across chr20** to explore how calls are distributed along the chromosome.
 
-## 3. Mark Duplicates
-picard MarkDuplicates \
-  I=alignment/sample.chr20.sorted.bam \
-  O=alignment/sample.chr20.dedup.bam \
-  M=alignment/dup_metrics.txt
+This step was included to:
 
-samtools index alignment/sample.chr20.dedup.bam
+* Practice basic genomic interval operations
+* Learn how variant density can highlight uneven coverage or technical artifacts
+* Go beyond “file generation” and perform simple exploratory analysis
 
-## 4. Variant Calling
-bcftools mpileup \
-  -f reference/chr20.fa \
-  -a FORMAT/AD \
-  alignment/sample.chr20.dedup.bam \
-| bcftools call -mv -Ov \
-  -o variants/sample.chr20.raw.vcf
+---
 
-## 5. Variant Filtering
-bcftools filter \
-  -s LOWQUAL \
-  -e 'DP<10 || QUAL<20' \
-  variants/sample.chr20.raw.vcf \
-  -Ov -o variants/sample.chr20.filtered.vcf
+## Handling large sequencing data
 
-## 6. Variant Statistics
-bcftools stats variants/sample.chr20.filtered.vcf \
-  > analysis/variant_stats.txt
+This repository intentionally excludes:
 
-## 7. Variant Density
-bedtools makewindows -g reference/chr20.sizes -w 100000 \
-  > analysis/chr20_100kb_windows.bed
+* Raw FASTQ files
+* BAM files
+* Full VCF outputs
 
-bedtools intersect \
-  -a analysis/chr20_100kb_windows.bed \
-  -b variants/sample.chr20.filtered.vcf \
-  -c > analysis/variant_density_100kb.bed
+Only lightweight, information‑dense artifacts (QC reports, statistics, BED files) are tracked.
 
-# Included Outputs
+This reflects an important practical lesson: **real NGS data are large and must be handled carefully**, even during learning‑phase projects.
 
-fastp_report.html – QC summary
+---
 
-variant_stats.txt – SNP/INDEL counts & Ti/Tv ratio
+## What went wrong and what I learned
 
-variant_density_100kb.bed – variant distribution
+During this project, I encountered several issues typical of early pipeline work:
 
-chr20_100kb_windows.bed – coordinate windows
+* Reference mismatches when using chromosome‑restricted FASTA files
+* Unexpected depth distributions that required careful interpretation
+* Memory limitations during alignment on local systems
 
-# Reproducibility
+Resolving these issues helped me understand:
 
-To reproduce this workflow:
+* Why explicit filtering is necessary in single‑sample analyses
+* Why many quality metrics are context‑dependent
+* Why small, controlled experiments are useful before scaling up
 
-Clone this repository
+---
 
-Download chr20.fa (hg38)
+## Relationship to my exome pipeline
 
-Download SRR1910621 FASTQs
+This chr20 project should be viewed as a **learning‑stage companion** to my full exome pipeline:
 
-Run each pipeline command in order
+* **chr20 pipeline:** exploration, debugging, statistics, and concept‑building
+* **exome pipeline:** complete, reproducible FASTQ → annotated VCF workflow
 
-# Future Extensions
+Together, they reflect my progression from **learning core mechanics** to **executing a full NGS analysis responsibly**.
 
-R-based visualization
+---
 
-Ti/Tv and base-change summary plots
+## Scope and limitations
 
-Depth & coverage plots
+* Single sample only
+* Chromosome‑restricted
+* No joint genotyping or variant recalibration
+* No clinical interpretation
 
-Gene-level annotation with SnpEff or VEP
+These limitations are intentional and aligned with the learning goals of the project.
 
-Multi-sample comparisons
+---
+
+## Closing note
+
+This repository represents an **honest snapshot of my learning process** in bioinformatics. It prioritizes clarity, reasoning, and reflection over sophistication, and serves as a foundation for more advanced analyses in subsequent projects.
